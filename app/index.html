@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="lJ9wGTBX7gnGONqLKWxCdG">
+<head data-page-node-id="ywJexkWnkXC9pRec9Jxtmy">
+    <meta charset="UTF-8" data-page-node-id="UHP742gBaAZAuAu6tHXoVn">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" data-page-node-id="g097iZh1smcyCqfPBZO2Zk">
+    <meta name="theme-color" content="#FFF8E7" data-page-node-id="5hi8epXuUQAxUmfHCahYUI">
+    <meta name="apple-mobile-web-app-capable" content="yes" data-page-node-id="lNaBzCIl0c0c0JPbYLpzQv">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" data-page-node-id="L63gtO5k7HcVPNnERu1fmf">
+    <meta name="apple-mobile-web-app-title" content="课程管理" data-page-node-id="0hoNv9frt05OLWXUWp53Pp">
+    <link rel="manifest" href="manifest.json" data-page-node-id="uPNOGKCd0ehGocXKzirmH0">
+    <link rel="icon" type="image/png" href="icons/icon-192.png" data-page-node-id="4c9jsjs6L6bLTPidelkV1m">
+    <link rel="apple-touch-icon" href="icons/icon-192.png" data-page-node-id="UUcvMtaVRKppKUO1plXuGG">
+    <link rel="stylesheet" href="styles.css" data-page-node-id="2xhkSg5Cxf90KKxR8bC8sp">
+    <title>课程余量管理</title>
+</head>
+<body data-page-node-id="oK2PK2MVdwBSILGF6QqIE8">
+    <!-- Login Screen -->
+    <div class="login-screen" id="loginScreen" data-page-node-id="RDybKaLnr6fweIOW8v0kgj">
+        <div class="login-container" data-page-node-id="Ibtz04meTq310eBn7vZBWD">
+            <div class="login-logo" data-page-node-id="JLKiT5Ietnu9jDPWCQg43k">📚</div>
+            <h1 class="login-title" data-page-node-id="KZVYGJfxBfHhlcYQ5WoiGr">课程管家</h1>
+            <p class="login-subtitle" data-page-node-id="K7nLZzdBLAvfJ0sR5r9sP6">两个孩子的课时，一家人心里都有数</p>
+            <div class="login-form" data-page-node-id="KfQxXJwh4beCtGQ5kcECtW">
+                <div class="login-who-label" data-page-node-id="8nkyXMlT4Nyup4bRDYn3wh">我是——</div>
+                <div class="login-who-row" id="loginWhoRow" data-page-node-id="vmaXIrmyE2vn73GdvIGcDc">
+                    <!-- 成员卡片由 JS 渲染 -->
+                </div>
+                <div class="form-group" data-page-node-id="hTpqCRXh4AOMvyzQTftsCX">
+                    <label class="form-label" data-page-node-id="xSM4SxrYuMI5gvCr3QRLZp">密码</label>
+                    <input type="password" class="form-input" id="loginPassword" placeholder="输入密码" autocomplete="current-password" data-page-node-id="bNfxF23GulmRcz2cJpFfAM">
+                </div>
+                <input type="hidden" id="loginUsername" autocomplete="username" data-page-node-id="MsZB8ZCeC8ysy4pxTvG8Du">
+                <button class="btn btn-filled btn-block" id="loginBtn" onclick="App.doLogin()" data-page-node-id="yr0mEX2vchEk24y7KAdYWr">进入家门 🔑</button>
+                <p class="login-hint" id="loginHint" data-page-node-id="gp2VflTCh5x3moMzrhBDKx"></p>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" style="display:none" data-page-node-id="7izyRRurOj7MDe9NWz5c1Q">
+        <!-- Navigation Rail (large screen) -->
+        <nav class="nav-rail" id="navRail" data-page-node-id="9XeRAJMMeL6BpJWQQLujfa">
+            <div class="nav-rail-header" data-page-node-id="KFb0KIN90lmxFOExokGmFR">
+                <span class="nav-rail-logo" data-page-node-id="bHBcmSVI147uX6gUzwCPn3">📚</span>
+            </div>
+            <button class="nav-rail-item active" data-view="dashboard" title="仪表盘" data-page-node-id="s7jvic4Nm7YH9rzAyL5BG0">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="6ErCWHMwiNgJdNplzBsCQ6"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" data-page-node-id="Hi6ZCHHr1iSadaKsd2r4fa"/></svg>
+                <span data-page-node-id="rHhZZriXB1zzeACRddCbZ5">仪表盘</span>
+            </button>
+            <button class="nav-rail-item" data-view="courses" title="全部课程" data-page-node-id="yaNUCEUOlQkmkeyLhAcDuw">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="aQRp3ptDvIBgzPyJPvOtS4"><path fill="currentColor" d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z" data-page-node-id="i8yk7uVUsLELEmPR1D914V"/></svg>
+                <span data-page-node-id="gtP5P9VkOSJNwZ96j2aG3K">课程</span>
+            </button>
+            <button class="nav-rail-item" data-view="stats" title="统计" data-page-node-id="0Ha50wYjebiDUWzsSUNHfL">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="Jj6tEuFW7CdO7ZJKdkHVXD"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" data-page-node-id="D443trv4fJ4H38Kn5UcxyJ"/></svg>
+                <span data-page-node-id="reMaEA79xpbGJHEqZBohq5">统计</span>
+            </button>
+            <button class="nav-rail-item" data-view="settings" title="设置" data-page-node-id="qDMyzz4FUI9FD8QsNiThU0">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="pRAnrzpkI4Y8PxfzKkbca2"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" data-page-node-id="8snmC14H3dbxVM66Tmy6oB"/></svg>
+                <span data-page-node-id="G7Ngu0dhMjiPouL0OUFHsF">设置</span>
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent" data-page-node-id="pNqSk19KyO3Vwqw5TF8Im2">
+            <!-- App Bar -->
+            <header class="app-bar" id="appBar" data-page-node-id="EBgN2WNP2iDdywEH146uNl">
+                <h1 class="app-bar-title" id="appBarTitle" data-page-node-id="KIVNhqQfQwakxMlA9dj3it">仪表盘</h1>
+                <div class="app-bar-actions" data-page-node-id="edFcj61djwqUE7Mds3bhNI">
+                    <div class="user-badge" id="userBadge" onclick="App.showSettings()" data-page-node-id="sXSQktGFGpUd6URjdQwAdF">
+                        <span id="userBadgeName" data-page-node-id="P0j4RLTztBEEBoxq6COQtF"></span>
+                        <svg viewBox="0 0 24 24" width="16" height="16" data-page-node-id="pMnXm1sCjLfUARp4acPqGX"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" data-page-node-id="FLT3oKqB9xYr57bU2TPTQx"/></svg>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <section class="view active" id="view-dashboard" data-page-node-id="jYDib6Loo7vyHXHbzZfQZt">
+                <div class="view-content" data-page-node-id="uRPS0oE4ZsuwUnZemTu4eY">
+                    <!-- Child switcher -->
+                    <div class="dashboard-switcher" id="dashboardSwitcher" data-page-node-id="DaYQ6EENCt1QoZ1tOGwbB1"></div>
+
+                    <!-- Summary Cards -->
+                    <div class="summary-grid" id="summaryGrid" data-page-node-id="kHexzJ4CDnoPJFcWbpiRCo">
+                        <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Courses by Child -->
+                    <div id="coursesByChild" data-page-node-id="n37CNUKff3iepHmQAeCN9M">
+                        <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Empty State -->
+                    <div class="empty-state hidden" id="emptyState" data-page-node-id="7NiKIqc9ozxod32BsJKNCp">
+                        <div class="empty-state-icon" data-page-node-id="fHTwAwOBATABc0zQxPRed2">📚</div>
+                        <h2 data-page-node-id="NAw172CwAKaIzG0MyIA1Cy">还没有课程</h2>
+                        <p data-page-node-id="URkjh27S0FiNFj5jpl7Cqg">点击下方按钮添加第一个课程，开始管理课程余量</p>
+                        <button class="btn btn-filled" onclick="App.showAddCourse()" data-page-node-id="tyZWY6Y7SNZENwO7JTAOCX">
+                            <svg viewBox="0 0 24 24" width="20" height="20" data-page-node-id="j1gYqCA01Yi30ETHoAZCZ6"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" data-page-node-id="SjMFe4Kk69JznA1ryE22vi"/></svg>
+                            添加课程
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- All Courses View -->
+            <section class="view" id="view-courses" data-page-node-id="6H5K6VfxIgsulGKjcxso3S">
+                <div class="view-content" data-page-node-id="wgZn1LctfS0dHczZ4lfnKP">
+                    <div class="filter-bar" id="filterBar" data-page-node-id="NQ40GkeHk4eXvIffmeHmWM">
+                        <button class="filter-chip active" data-filter="all" data-page-node-id="jmG4HrKpdG4fCYXjm72HuA">全部</button>
+                        <!-- Filter chips filled by JS -->
+                    </div>
+                    <div class="course-list" id="courseList" data-page-node-id="8U0E1uwDQnVwXSB5GAWKSz">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Stats View -->
+            <section class="view" id="view-stats" data-page-node-id="dFqksSvgiICWyFaS95xiEs">
+                <div class="view-content" data-page-node-id="2CRBI5PI8aoWjmpgFHZ9IO">
+                    <div id="statsContent" data-page-node-id="FgZf7G64gPYlq6QonHPHQF">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section class="view" id="view-settings" data-page-node-id="1BZNoY507KqNClGPnWApHL">
+                <div class="view-content" data-page-node-id="d68bVsx321dI2aqnNP2UCl">
+                    <div id="settingsContent" data-page-node-id="eqyclQ4V117geRijjhENZS">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- FAB -->
+        <button class="fab" id="fab" onclick="App.showAddCourse()" data-page-node-id="hWXHzBtdIEIOzRHX7YdOxw">
+            <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="lZ2192IeLyT28cS7esDiZS"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" data-page-node-id="ReA4xWNuWIelZkVFJqDKN7"/></svg>
+        </button>
+
+        <!-- Bottom Navigation (small screen) -->
+        <nav class="bottom-nav" id="bottomNav" data-page-node-id="M25G3u1JhusZlURWmioLRG">
+            <button class="bottom-nav-item active" data-view="dashboard" data-page-node-id="iFq2DIex1NwyiMjTEFY9P4">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="FZ2YnV62P5SDh3pwGmKjpK"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" data-page-node-id="zs5w76CFOkOkuMsEF5TMtY"/></svg>
+                <span data-page-node-id="NoTuOaE22kTkvZK3e99hH1">仪表盘</span>
+            </button>
+            <button class="bottom-nav-item" data-view="courses" data-page-node-id="r1DGtFt1ZeVmGrfwePZfhH">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="8B31pGmRcpcxE0wFXmHdGz"><path fill="currentColor" d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z" data-page-node-id="a6hBGZqJeYYQDO6typecTC"/></svg>
+                <span data-page-node-id="KqRDCsfPd1vzAonCyVGyR4">课程</span>
+            </button>
+            <button class="bottom-nav-item" data-view="stats" data-page-node-id="5pC00duG6qtAxKjotPFaCF">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="60vTDUIFndu5S4BtNKIvLJ"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" data-page-node-id="q6QDXhgZJiJ22ha5LQBSeq"/></svg>
+                <span data-page-node-id="6Dtiu906E22TZrvoQVJSuC">统计</span>
+            </button>
+            <button class="bottom-nav-item" data-view="settings" data-page-node-id="B8fmFnqjCNesUvqFnCH3ol">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="CIF1F1HI7axD6EDhV3U9ZA"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" data-page-node-id="k5RBSTbISfM3Fnb9MEiq14"/></svg>
+                <span data-page-node-id="KJY9g70B3mP0trTfmIViYY">设置</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Modal Container -->
+    <div class="modal-overlay" id="modalOverlay" data-page-node-id="cN9qETvb0KPNxINbQuOMG1"></div>
+    <div class="modal" id="modal" data-page-node-id="r4eb1kEIo6qKpAkR4P2qyc">
+        <div class="modal-header" data-page-node-id="5Zh700ZsYYa6Ks9qmVyJoj">
+            <h2 class="modal-title" id="modalTitle" data-page-node-id="Vgmfdr14Q5F9unJJucDQGQ">标题</h2>
+            <button class="icon-btn" onclick="App.closeModal()" data-page-node-id="9Em6exxFIh0Au8XeIaMYf9">
+                <svg viewBox="0 0 24 24" width="24" height="24" data-page-node-id="gpu22Ji1IwKaZZcnssXMva"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" data-page-node-id="dP6LbaVfTezqAClRVbJnBy"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="modalBody" data-page-node-id="1W9CefRNcNUziGLELcZxsz">
+            <!-- Filled by JS -->
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" data-page-node-id="JPBY3V4CFjNNbr20tQwByL"></div>
+
+    <!-- Bottom Sheet for quick actions -->
+    <div class="sheet-overlay" id="sheetOverlay" data-page-node-id="yDr9nSjLEEbwjw6jrbwROd"></div>
+    <div class="bottom-sheet" id="bottomSheet" data-page-node-id="yYi0anz3rWb8xtPj9jGXRU">
+        <div class="sheet-handle" data-page-node-id="iFK4F7Hb75djHBO01QT5mu"></div>
+        <div class="sheet-content" id="sheetContent" data-page-node-id="HozfIR3ePYCncCI5eyb0Th">
+            <!-- Filled by JS -->
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                // 检测到新版本安装并激活后自动刷新，让新代码立即生效
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    if (!newWorker) return;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                            window.location.reload();
+                        }
+                    });
+                });
+            }).catch(() => {});
+        }
+    </script>
+</body>
+</html>
