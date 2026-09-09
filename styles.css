@@ -25,13 +25,15 @@
     --color-danger: #C7483F;
     --color-danger-bg: #FDF0EF;
 
-    /* ─── 大宝 · 向日葵黄 ─── */
-    --kid-primary: #E8992E;
-    --kid-primary-deep: #D18520;
-    --kid-primary-light: #F5D4A0;
-    --kid-soft: #FDF0DA;
-    --kid-soft-2: #FBE8CC;
-    --kid-deco: #E8604C;
+    /* ─── 品牌 · 珊瑚橙（“全部/家庭”视图的默认主色，取自暖阳设计令牌 --sun-500）───
+       注意：大宝向日葵黄 #E8992E、二宝湖水青 #2E8C7E 不再作为全局默认，
+       仅在选中对应孩子时由 JS 注入。 */
+    --kid-primary: #E8604C;
+    --kid-primary-deep: #C23A26;
+    --kid-primary-light: #FFA08C;
+    --kid-soft: #FEF3F0;
+    --kid-soft-2: #FBE4DE;
+    --kid-deco: #E8AE4C;
 
     /* ─── 二宝 · 湖水青 ─── */
     --kid-b-primary: #2E8C7E;
