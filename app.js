@@ -33,6 +33,108 @@ const App = {
         calMonth: new Date().getMonth()
     },
 
+    // ---- 版本信息 ----
+    // APP_BUILD 是对外版本号，设置-关于 显示为「版本：V27」
+    // 真实值从部署的 sw.js 中的 APP_BUILD 常量读取并覆盖下面的回退值。
+    // 注意：不要从 CACHE_NAME 读取 —— 那是内部缓存键，每次部署都要递增，
+    //       与用户看到的版本号无关（两者已解耦）。
+    BUILD_NO: 27,
+
+    // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
+    detectBuildNo() {
+        fetch('sw.js', { cache: 'no-store' })
+            .then(r => (r.ok ? r.text() : ''))
+            .then(txt => {
+                const m = txt && txt.match(/APP_BUILD\s*=\s*(\d+)/);
+                if (m) this.BUILD_NO = m[1];
+            })
+            .catch(() => {});
+    },
+
+    // ---- 服务器连通自检 ----
+    // 目的：PWA 是 cache-first，服务器挂了/链接失效时用户完全无感。
+    // 这里做一次「必定走网络」的探测，把真实状态暴露给用户。
+    serverOnline: null,   // null=未检测 / true=已连接 / false=离线或链接失效
+    serverBuild: null,    // 服务器上最新的版本号（APP_BUILD）
+
+    probeServer() {
+        this.serverOnline = null;
+        this.serverBuild = null;
+        this._renderServerStatus();
+
+        // URL 带时间戳 → SW 的 cache key 不命中 → 必定发真实网络请求
+        fetch('sw.js?_probe=' + Date.now(), { cache: 'no-store' })
+            .then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            })
+            .then(txt => {
+                // 「链接已失效」占位页是 HTML，不含 CACHE_NAME，据此判定不是真服务器
+                if (!/CACHE_NAME\s*=/.test(txt)) throw new Error('not-sw');
+                this.serverOnline = true;
+                const m = txt.match(/APP_BUILD\s*=\s*(\d+)/);
+                if (m) this.serverBuild = m[1];
+            })
+            .catch(() => {
+                this.serverOnline = false;
+            })
+            .then(() => this._renderServerStatus());
+    },
+
+    _renderServerStatus() {
+        const icon = document.getElementById('serverStatusIcon');
+        const title = document.getElementById('serverStatusTitle');
+        const sub = document.getElementById('serverStatusText');
+        const action = document.getElementById('serverStatusAction');
+        if (!icon || !title || !sub) return;
+
+        if (this.serverOnline === null) {
+            icon.textContent = '⏳';
+            icon.style.background = 'var(--surface-container-highest)';
+            icon.style.color = 'var(--on-surface-variant)';
+            title.textContent = '服务器连接';
+            sub.textContent = '检测中…';
+            if (action) action.style.display = 'none';
+            return;
+        }
+
+        if (this.serverOnline === false) {
+            icon.textContent = '⚠';
+            icon.style.background = 'var(--danger-container)';
+            icon.style.color = 'var(--danger)';
+            title.textContent = '未连接到服务器';
+            sub.textContent = '链接可能已失效 · 数据仅存本机，建议立即导出备份';
+            if (action) {
+                action.style.display = '';
+                action.onclick = () => this.probeServer();
+            }
+            return;
+        }
+
+        // 已连接：对比服务器版本与本机版本
+        const upToDate = this.serverBuild === null
+            || String(this.serverBuild) === String(this.BUILD_NO);
+        if (upToDate) {
+            icon.textContent = '✓';
+            icon.style.background = 'var(--success-container)';
+            icon.style.color = 'var(--success)';
+            title.textContent = '服务器已连接';
+            sub.textContent = '版本已是最新（V' + this.BUILD_NO + '）';
+        } else {
+            icon.textContent = '⬆';
+            icon.style.background = 'var(--warning-container)';
+            icon.style.color = 'var(--warning)';
+            title.textContent = '服务器有新版本';
+            sub.textContent = '服务器 V' + this.serverBuild + ' · 本机 V' + this.BUILD_NO
+                + '，请重装更新';
+        }
+        if (action) {
+            action.style.display = '';
+            action.textContent = '重试 ›';
+            action.onclick = () => this.probeServer();
+        }
+    },
+
     // Child color palette · 「暖阳」家庭色板（大宝向日葵黄 / 二宝湖水青 打头）
     childColors: ['#E8992E', '#2E8C7E', '#E8604C', '#D98A26', '#7A9E7E', '#C77DBA'],
     childEmojis: ['👦', '👧', '🧒', '👶', '🧑', '👨', '👩'],
@@ -166,6 +268,7 @@ const App = {
         this.load();
         this.applyTheme();
         this.bindEvents();
+        this.detectBuildNo();
         // Check if logged in
         if (!this.state.currentUser) {
             this.showLogin();
@@ -1548,6 +1651,17 @@ const App = {
 
         container.innerHTML = `
             <div class="settings-section">
+                <div class="settings-item" id="serverStatusBar">
+                    <div class="settings-item-icon" id="serverStatusIcon" style="background: var(--surface-container-highest); color: var(--on-surface-variant);">⏳</div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title" id="serverStatusTitle">服务器连接</div>
+                        <div class="settings-item-subtitle" id="serverStatusText">检测中…</div>
+                    </div>
+                    <div class="settings-item-value" id="serverStatusAction" style="display:none;">重试 ›</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
                 <div class="settings-section-title">当前账号</div>
                 <div class="settings-item">
                     <div class="settings-item-icon" style="background: var(--primary); color: white;">
@@ -1664,11 +1778,14 @@ const App = {
                     <div class="settings-item-icon" style="background: var(--surface-container-highest); color: var(--on-surface-variant);">📚</div>
                     <div class="settings-item-content">
                         <div class="settings-item-title">课程余量管理</div>
-                        <div class="settings-item-subtitle">版本 1.0.0 · 单机版</div>
+                        <div class="settings-item-subtitle">版本：V${this.BUILD_NO}</div>
                     </div>
                 </div>
             </div>
         `;
+
+        // 渲染完再做一次服务器连通自检（异步回填顶部状态条）
+        this.probeServer();
     },
 
     // ---- Setup Wizard ----
