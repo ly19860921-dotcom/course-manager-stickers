@@ -34,11 +34,11 @@ const App = {
     },
 
     // ---- 版本信息 ----
-    // 对外版本号显示为「版本：V28」，与 sw.js 的 APP_BUILD 保持一致。
+    // 对外版本号显示为「版本：V29」，与 sw.js 的 APP_BUILD 保持一致。
     // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
     // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
     //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
-    BUILD_NO: 28,
+    BUILD_NO: 29,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -354,16 +354,66 @@ const App = {
             return;
         }
 
-        const user = this.state.users.find(u => u.username === username);
-        if (!user || user.password !== password) {
-            hint.textContent = '用户名或密码错误';
-            hint.className = 'login-hint';
+        const verify = () => {
+            const u = this.state.users.find(x => x.username === username);
+            return u && u.password === password ? u : null;
+        };
+
+        // 第一轮：本地缓存校验
+        let user = verify();
+        if (user) {
+            this._finishLogin(user);
             return;
         }
 
+        // 本地不匹配 → 可能是另一台手机改过密码，本机缓存的还是旧账号表。
+        // 先从云端拉一次最新 users（合并 _ts 较大者）再校验，避免"改完密码旧密码还能登"。
+        hint.textContent = '账号校验中…';
+        hint.className = 'login-hint';
+        this._pullLatestUsersFromCloud().then(refreshed => {
+            if (refreshed) user = verify();
+            if (!user) {
+                hint.textContent = '用户名或密码错误';
+                hint.className = 'login-hint';
+                return;
+            }
+            this._finishLogin(user);
+        }).catch(() => {
+            hint.textContent = '用户名或密码错误';
+            hint.className = 'login-hint';
+        });
+    },
+
+    _finishLogin(user) {
         this.state.currentUser = { username: user.username, displayName: user.displayName };
         this.save(false);
         this.showApp();
+    },
+
+    // 从云端拉取最新账号表并合并到本机（登录校验兜底）
+    // 解决：本机缓存的 users 是旧的（另一台设备改过密码），登录页却只查本地。
+    // 返回 true 表示已尝试刷新（不论结果），调用方需重新校验。
+    async _pullLatestUsersFromCloud() {
+        if (!this.isSyncActive()) return false;
+        try {
+            const res = await fetch(this.SYNC_API + '/' + this.state.settings.syncKey, { cache: 'no-store' });
+            const text = (await res.text()).trim();
+            if (!text) return false;
+            const cloud = JSON.parse(text);
+            if (!cloud || !Array.isArray(cloud.users)) return false;
+            const map = new Map();
+            [].concat(this.state.users || [], cloud.users || []).forEach(u => {
+                if (!u || !u.username) return;
+                const ex = map.get(u.username);
+                if (!ex || (u._ts || 0) > (ex._ts || 0)) map.set(u.username, u);
+            });
+            this.state.users = Array.from(map.values());
+            this.save(false);
+            return true;
+        } catch (e) {
+            console.error('Login user refresh failed:', e);
+            return false;
+        }
     },
 
     doLogout() {
