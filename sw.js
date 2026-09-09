@@ -1,9 +1,9 @@
 // 内部缓存键：每次部署必须递增（否则用户端不拉取新版本）
-const CACHE_NAME = 'course-manager-v32';
+const CACHE_NAME = 'course-manager-v33';
 
-// 对外显示的版本号：设置-关于 页面展示为「版本：V29」
+// 对外显示的版本号：设置-关于 页面展示为「版本：V30」
 // 每次发布都递增（与缓存键同步），用户能直观看到版本随升级变化
-const APP_BUILD = 29;
+const APP_BUILD = 30;
 
 const ASSETS = [
     './',
