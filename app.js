@@ -34,11 +34,11 @@ const App = {
     },
 
     // ---- 版本信息 ----
-    // APP_BUILD 是对外版本号，设置-关于 显示为「版本：V27」
-    // 真实值从部署的 sw.js 中的 APP_BUILD 常量读取并覆盖下面的回退值。
-    // 注意：不要从 CACHE_NAME 读取 —— 那是内部缓存键，每次部署都要递增，
-    //       与用户看到的版本号无关（两者已解耦）。
-    BUILD_NO: 27,
+    // 对外版本号显示为「版本：V28」，与 sw.js 的 APP_BUILD 保持一致。
+    // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
+    // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
+    //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
+    BUILD_NO: 28,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -138,6 +138,10 @@ const App = {
     // Child color palette · 「暖阳」家庭色板（大宝向日葵黄 / 二宝湖水青 打头）
     childColors: ['#E8992E', '#2E8C7E', '#E8604C', '#D98A26', '#7A9E7E', '#C77DBA'],
     childEmojis: ['👦', '👧', '🧒', '👶', '🧑', '👨', '👩'],
+
+    // 家庭品牌色：珊瑚橙（仪表盘「全部」视图 / 无孩子选中时的主题色，
+    // 取自暖阳设计令牌 --sun-500，不偏向任何孩子）
+    FAMILY_COLOR: '#E8604C',
 
     // ---- Storage ----
     STORAGE_KEY: 'courseManagerData',
@@ -994,7 +998,7 @@ const App = {
         const child = cid ? this.state.children.find(c => c.id === cid) : null;
 
         if (child && child.color) {
-            // 解析孩子颜色
+            // 选中某个孩子 → 主题色跟随孩子专属色（大宝向日葵黄 / 二宝湖水青 …）
             const color = child.color;
             root.style.setProperty('--kid-primary', color);
             root.style.setProperty('--kid-primary-deep', this._darken(color, 0.15));
@@ -1003,19 +1007,18 @@ const App = {
             root.style.setProperty('--kid-soft-2', this._lighten(color, 0.85));
             root.style.setProperty('--kid-deco', this._shiftHue(color, 30));
         } else {
-            // 默认使用第一个孩子的颜色
-            const firstChild = this.state.children[0];
-            const color = firstChild ? (firstChild.color || this.childColors[0]) : this.childColors[0];
+            // 「全部」= 家庭视图 → 品牌珊瑚橙，不偏向任何孩子
+            const color = this.FAMILY_COLOR;
             root.style.setProperty('--kid-primary', color);
             root.style.setProperty('--kid-primary-deep', this._darken(color, 0.15));
             root.style.setProperty('--kid-primary-light', this._lighten(color, 0.25));
-            root.style.setProperty('--kid-soft', this._lighten(color, 0.9));
-            root.style.setProperty('--kid-soft-2', this._lighten(color, 0.85));
+            root.style.setProperty('--kid-soft', '#FEF3F0');
+            root.style.setProperty('--kid-soft-2', '#FBE4DE');
             root.style.setProperty('--kid-deco', this._shiftHue(color, 30));
         }
 
         // 更新 theme-color
-        const themeColor = child && child.color ? child.color : (this.state.children[0] ? this.state.children[0].color || this.childColors[0] : this.childColors[0]);
+        const themeColor = child && child.color ? child.color : this.FAMILY_COLOR;
         document.querySelector('meta[name="theme-color"]').setAttribute('content', themeColor);
     },
 
