@@ -1,4 +1,10 @@
-const CACHE_NAME = 'course-manager-v23';
+// 内部缓存键：每次部署必须递增（否则用户端不拉取新版本）
+const CACHE_NAME = 'course-manager-v30';
+
+// 对外显示的版本号：设置-关于 页面读取并展示为「版本：V27」
+// 只在正式发版时递增，不受上面的缓存键影响
+const APP_BUILD = 27;
+
 const ASSETS = [
     './',
     './index.html',
@@ -40,6 +46,14 @@ self.addEventListener('activate', (e) => {
 // Fetch: cache-first strategy
 self.addEventListener('fetch', (e) => {
     if (e.request.method !== 'GET') return;
+
+    // 连通性探测（sw.js?_probe=xxx）：直接走网络，不查缓存也不写缓存，
+    // 保证「服务器连接状态」检测到的是真实服务器，而不是本地缓存
+    if (e.request.url.indexOf('_probe=') !== -1) {
+        e.respondWith(fetch(e.request));
+        return;
+    }
+
     e.respondWith(
         caches.match(e.request).then(cached => {
             if (cached) return cached;
