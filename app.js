@@ -13,6 +13,11 @@ const App = {
         children: [],
         courses: [],
         transactions: [],
+        // ★ 删除墓碑：记录已删除对象的 {kind:'txn'|'course'|'child', id, _ts}。
+        //   云同步是按 id 并集合并，A 机删除的对象在云端不存在后，
+        //   B 机本地的旧数据会因并集而"复活"。墓碑随 payload 传播，
+        //   让所有设备在合并后剔除同一批 id（30 天后自动清理）。
+        tombstones: [],
         settings: {
             theme: 'light',
             lowThreshold: 5,
@@ -38,7 +43,7 @@ const App = {
     // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
     // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
     //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
-    BUILD_NO: 30,
+    BUILD_NO: 31,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -157,6 +162,7 @@ const App = {
             children: this.state.children,
             courses: this.state.courses,
             transactions: this.state.transactions,
+            tombstones: this.state.tombstones || [],
             settings: this.state.settings,
             updatedAt: this.state.updatedAt,
             lastSyncedAt: this.state.lastSyncedAt,
@@ -183,6 +189,7 @@ const App = {
                 this.state.children = data.children || [];
                 this.state.courses = data.courses || [];
                 this.state.transactions = data.transactions || [];
+                this.state.tombstones = data.tombstones || [];
                 this.state.settings = Object.assign(this.state.settings, data.settings || {});
                 this.state.updatedAt = data.updatedAt || 0;
                 this.state.lastSyncedAt = data.lastSyncedAt || 0;
@@ -526,6 +533,7 @@ const App = {
             children: this.state.children,
             courses: this.state.courses,
             transactions: this.state.transactions,
+            tombstones: this.state.tombstones || [],
             settings: this.state.settings
         });
     },
@@ -661,8 +669,48 @@ const App = {
         }
     },
 
+    // ---- 删除墓碑（解决"并集合并导致删除无法跨设备传播"） ----
+    // 记录一条删除墓碑
+    _tombstone(kind, id) {
+        if (!id) return;
+        if (!Array.isArray(this.state.tombstones)) this.state.tombstones = [];
+        this.state.tombstones.push({ kind: kind, id: id, _ts: Date.now() });
+        this._pruneTombstones();
+    },
+    // 清理 30 天前的旧墓碑（避免无限增长）
+    _pruneTombstones() {
+        const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+        this.state.tombstones = (this.state.tombstones || []).filter(t => t && t.id && (t._ts || 0) > cutoff);
+    },
+    // 合并双方墓碑（同 id 取 _ts 更大者）
+    _mergeTombstones(cloudTombstones) {
+        const map = new Map();
+        [].concat(this.state.tombstones || [], cloudTombstones || []).forEach(t => {
+            if (!t || !t.id || !t.kind) return;
+            const k = t.kind + ':' + t.id;
+            const ex = map.get(k);
+            if (!ex || (t._ts || 0) > (ex._ts || 0)) map.set(k, t);
+        });
+        this.state.tombstones = Array.from(map.values());
+        this._pruneTombstones();
+    },
+    // 按墓碑从三个集合中剔除已删除对象（合并数据后调用）
+    _applyTombstones() {
+        const ts = this.state.tombstones || [];
+        if (!ts.length) return;
+        const dead = new Set();
+        ts.forEach(t => { if (t && t.id) dead.add(t.kind + ':' + t.id); });
+        this.state.transactions = this.state.transactions.filter(t => t && t.id && !dead.has('txn:' + t.id));
+        this.state.courses = this.state.courses.filter(c => c && c.id && !dead.has('course:' + c.id));
+        this.state.children = this.state.children.filter(c => c && c.id && !dead.has('child:' + c.id));
+    },
+
     // ★ 智能合并云端数据（并集合并，不丢失任何一端的修改）
     _mergeCloudData(cloud, skipRender = false) {
+        // 先合并删除墓碑：双方删除过的 id 合并后统一剔除，
+        // 否则 A 机删除的对象会因 B 机本地旧数据而在并集中"复活"
+        this._mergeTombstones(cloud.tombstones || []);
+
         // courses 按 id 并集合并，同 id 取 _ts 更大的（最近修改的）
         const courseMap = new Map();
         [].concat(this.state.courses || [], cloud.courses || []).forEach(c => {
@@ -706,6 +754,8 @@ const App = {
         this.state.children = Array.from(childMap.values());
         this.state.transactions = Array.from(txMap.values())
             .sort((a, b) => (b.date || 0) - (a.date || 0));
+        // 按墓碑剔除已删除对象（并集合并会把另一端已删的旧数据带回来）
+        this._applyTombstones();
         // users: 取并集，如果密码不同取 _ts 更大的
         this.state.users = Array.from(userMap.values());
         if (cloud.settings) {
@@ -729,6 +779,8 @@ const App = {
 
     // 直接使用云端数据覆盖本机（空数据初始化或用户选择"使用云端"时）
     applyCloud(cloud) {
+        // 合并删除墓碑（含云端传来的），覆盖后统一剔除已删除对象
+        this._mergeTombstones(cloud.tombstones || []);
         // Union-merge transactions by id with _ts-aware merging
         const txMap = new Map();
         [].concat(this.state.transactions || [], cloud.transactions || []).forEach(t => {
@@ -747,6 +799,7 @@ const App = {
         this.state.courses = cloud.courses || [];
         this.state.transactions = Array.from(txMap.values())
             .sort((a, b) => (b.date || 0) - (a.date || 0));
+        this._applyTombstones();
         if (cloud.settings) {
             const mySyncKey = this.state.settings.syncKey;
             const mySyncEnabled = this.state.settings.syncEnabled;
@@ -1543,6 +1596,9 @@ const App = {
             }
             cleanup();
             this.closeModal();
+            // 记录墓碑：课程本身 + 其名下所有操作记录
+            this._tombstone('course', courseId);
+            this.state.transactions.filter(t => t.courseId === courseId).forEach(t => this._tombstone('txn', t.id));
             this.state.courses = this.state.courses.filter(c => c.id !== courseId);
             this.state.transactions = this.state.transactions.filter(t => t.courseId !== courseId);
             this.save();
@@ -2048,6 +2104,9 @@ const App = {
             confirmText: '删除',
             danger: true,
             onConfirm: () => {
+                // 记录墓碑：课程本身 + 其名下所有操作记录（否则另一台设备会"复活"它们）
+                this._tombstone('course', courseId);
+                this.state.transactions.filter(t => t.courseId === courseId).forEach(t => this._tombstone('txn', t.id));
                 this.state.courses = this.state.courses.filter(c => c.id !== courseId);
                 this.state.transactions = this.state.transactions.filter(t => t.courseId !== courseId);
                 this.save();
@@ -2332,6 +2391,7 @@ const App = {
                 course.remaining = course.remaining + txn.amount;
                 course._ts = Date.now();
                 this.state.transactions = this.state.transactions.filter(t => t.id !== txnId);
+                this._tombstone('txn', txnId);  // 墓碑随云同步传播，另一台设备合并时剔除
                 this.save();
                 this.showCourseDetail(txn.courseId);
                 this.render();
@@ -2820,10 +2880,16 @@ const App = {
         const courseCount = this.state.courses.filter(c => c.childId === childId).length;
         const performDelete = () => {
             if (courseCount > 0) {
+                // 记录墓碑：孩子 + 名下课程 + 相关操作记录
+                this.state.courses.filter(c => c.childId === childId).forEach(c => {
+                    this._tombstone('course', c.id);
+                    this.state.transactions.filter(t => t.courseId === c.id).forEach(t => this._tombstone('txn', t.id));
+                });
                 this.state.courses = this.state.courses.filter(c => c.childId !== childId);
                 const courseIds = new Set(this.state.courses.map(c => c.id));
                 this.state.transactions = this.state.transactions.filter(t => courseIds.has(t.courseId));
             }
+            this._tombstone('child', childId);
             this.state.children = this.state.children.filter(c => c.id !== childId);
             this.save();
             this.render();
@@ -2880,6 +2946,7 @@ const App = {
             children: this.state.children,
             courses: this.state.courses,
             transactions: this.state.transactions,
+            tombstones: this.state.tombstones || [],
             settings: this.state.settings,
             exportDate: new Date().toISOString()
         };
@@ -2913,6 +2980,8 @@ const App = {
                         this.state.children = data.children;
                         this.state.courses = data.courses;
                         this.state.transactions = data.transactions || [];
+                        // 导入是全量覆盖：清空旧墓碑，避免误删刚导入的数据
+                        this.state.tombstones = [];
                         if (data.settings) this.state.settings = Object.assign(this.state.settings, data.settings);
                         this.save();
                         this.applyTheme();
