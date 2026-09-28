@@ -684,7 +684,7 @@ const App = {
     _tombstone(kind, id) {
         if (!id) return;
         if (!Array.isArray(this.state.tombstones)) this.state.tombstones = [];
-        this.state.tombstones.push({ kind: kind, id: id, _ts: Date.now() });
+        this.state.tombstones.push({ kind: kind, id: id, _ts: this._opTs() });
         this._pruneTombstones();
     },
     // 清理 30 天前的旧墓碑（避免无限增长）
@@ -716,6 +716,19 @@ const App = {
     },
 
     // ---- 回收站 ----
+    // 单调递增的操作时间戳：同一毫秒内连续删除/恢复会拿到相同的 Date.now()，
+    // 合并时"取 _ts 更大者"就会失效（恢复动作传不出去）。这里保证严格递增。
+    _opTs() {
+        const now = Date.now();
+        let last = this._lastOpTs || 0;
+        if (!last) {
+            (this.state.recycleBin || []).concat(this.state.tombstones || []).forEach(x => {
+                if (x && (x._ts || 0) > last) last = x._ts;
+            });
+        }
+        this._lastOpTs = now > last ? now : last + 1;
+        return this._lastOpTs;
+    },
     // 把一个对象移入回收站（记录快照，再由调用方从主集合移除）
     _binItem(kind, item, parent, follower) {
         if (!item || !item.id) return;
@@ -723,7 +736,7 @@ const App = {
         // 同一 id 已有"未恢复"的条目 → 不重复添加
         const ex = this.state.recycleBin.find(b => b.id === item.id && b.kind === kind && !b.restoredAt);
         if (ex) return;
-        const now = Date.now();
+        const now = this._opTs();
         this.state.recycleBin.push({
             id: item.id,
             kind: kind,
@@ -793,7 +806,7 @@ const App = {
     restoreBinItem(id, kind) {
         const picked = this._collectBinCascade(id, kind, false);
         if (!picked.length) { this.showToast('回收站里找不到这条记录'); return; }
-        const now = Date.now();
+        const now = this._opTs();
 
         picked.forEach(b => {
             const item = JSON.parse(JSON.stringify(b.item));
