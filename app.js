@@ -18,6 +18,13 @@ const App = {
         //   B 机本地的旧数据会因并集而"复活"。墓碑随 payload 传播，
         //   让所有设备在合并后剔除同一批 id（30 天后自动清理）。
         tombstones: [],
+        // ★ 回收站：删除先进入这里（可恢复），而非直接丢弃。
+        //   条目 = { id, kind:'txn'|'course'|'child', item:原对象快照,
+        //            parent:{courseId,childId}, follower:是否随父级连带删除,
+        //            deletedAt, deletedBy, restoredAt:null, _ts }
+        //   同步规则：按 id 并集合并取 _ts 大者；restoredAt 非空表示"已恢复"
+        //   （条目保留 30 天作为恢复标记，让恢复动作也能跨设备传播）。
+        recycleBin: [],
         settings: {
             theme: 'light',
             lowThreshold: 5,
@@ -43,7 +50,7 @@ const App = {
     // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
     // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
     //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
-    BUILD_NO: 31,
+    BUILD_NO: 32,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -163,6 +170,7 @@ const App = {
             courses: this.state.courses,
             transactions: this.state.transactions,
             tombstones: this.state.tombstones || [],
+            recycleBin: this.state.recycleBin || [],
             settings: this.state.settings,
             updatedAt: this.state.updatedAt,
             lastSyncedAt: this.state.lastSyncedAt,
@@ -190,6 +198,7 @@ const App = {
                 this.state.courses = data.courses || [];
                 this.state.transactions = data.transactions || [];
                 this.state.tombstones = data.tombstones || [];
+                this.state.recycleBin = data.recycleBin || [];
                 this.state.settings = Object.assign(this.state.settings, data.settings || {});
                 this.state.updatedAt = data.updatedAt || 0;
                 this.state.lastSyncedAt = data.lastSyncedAt || 0;
@@ -534,6 +543,7 @@ const App = {
             courses: this.state.courses,
             transactions: this.state.transactions,
             tombstones: this.state.tombstones || [],
+            recycleBin: this.state.recycleBin || [],
             settings: this.state.settings
         });
     },
@@ -705,6 +715,197 @@ const App = {
         this.state.children = this.state.children.filter(c => c && c.id && !dead.has('child:' + c.id));
     },
 
+    // ---- 回收站 ----
+    // 把一个对象移入回收站（记录快照，再由调用方从主集合移除）
+    _binItem(kind, item, parent, follower) {
+        if (!item || !item.id) return;
+        if (!Array.isArray(this.state.recycleBin)) this.state.recycleBin = [];
+        // 同一 id 已有"未恢复"的条目 → 不重复添加
+        const ex = this.state.recycleBin.find(b => b.id === item.id && b.kind === kind && !b.restoredAt);
+        if (ex) return;
+        const now = Date.now();
+        this.state.recycleBin.push({
+            id: item.id,
+            kind: kind,
+            item: JSON.parse(JSON.stringify(item)),
+            parent: parent || {},
+            follower: !!follower,
+            deletedAt: now,
+            deletedBy: (this.state.currentUser && this.state.currentUser.displayName) || '未知',
+            restoredAt: null,
+            _ts: now
+        });
+    },
+    // 仍留在回收站中的条目（排除已恢复的标记条目）
+    _binItems() {
+        return (this.state.recycleBin || []).filter(b => b && b.id && !b.restoredAt);
+    },
+    // 合并云端回收站（并集，同 id 取 _ts 大者），再让删除/恢复状态在本机生效
+    _mergeRecycleBin(cloudBin) {
+        const map = new Map();
+        [].concat(this.state.recycleBin || [], cloudBin || []).forEach(b => {
+            if (!b || !b.id || !b.kind) return;
+            const k = b.kind + ':' + b.id;
+            const ex = map.get(k);
+            if (!ex || (b._ts || 0) > (ex._ts || 0)) map.set(k, b);
+        });
+        // 已恢复的标记条目保留 30 天（用于跨设备传播恢复动作），超期清理
+        const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+        let list = Array.from(map.values()).filter(b => !b.restoredAt || (b._ts || 0) > cutoff);
+        // 墓碑（彻底删除）优先：已被彻底删除的条目不再留在回收站
+        const dead = new Set((this.state.tombstones || []).map(t => t.kind + ':' + t.id));
+        if (dead.size) list = list.filter(b => !dead.has(b.kind + ':' + b.id));
+        this.state.recycleBin = list;
+        this._applyRecycleBin();
+    },
+    // 把"仍在回收站中"的对象从主集合剔除（否则并集合并会让已删对象复活）
+    _applyRecycleBin() {
+        const bins = this._binItems();
+        if (!bins.length) return;
+        const dead = new Set(bins.map(b => b.kind + ':' + b.id));
+        this.state.transactions = this.state.transactions.filter(t => t && t.id && !dead.has('txn:' + t.id));
+        this.state.courses = this.state.courses.filter(c => c && c.id && !dead.has('course:' + c.id));
+        this.state.children = this.state.children.filter(c => c && c.id && !dead.has('child:' + c.id));
+    },
+    // 收集要处理（恢复/彻底删除）的条目：自身 + 随它连带删除的下级
+    _collectBinCascade(id, kind, includeAll) {
+        const bin = this._binItems();
+        const picked = [];
+        const self = bin.find(b => b.id === id && b.kind === kind);
+        if (!self) return picked;
+        picked.push(self);
+        if (kind === 'child') {
+            bin.forEach(b => {
+                if (b.kind === 'course' && b.parent && b.parent.childId === id && (includeAll || b.follower)) picked.push(b);
+            });
+            const courseIds = picked.filter(b => b.kind === 'course').map(b => b.id);
+            bin.forEach(b => {
+                if (b.kind === 'txn' && b.parent && courseIds.indexOf(b.parent.courseId) !== -1 && (includeAll || b.follower)) picked.push(b);
+            });
+        } else if (kind === 'course') {
+            bin.forEach(b => {
+                if (b.kind === 'txn' && b.parent && b.parent.courseId === id && (includeAll || b.follower)) picked.push(b);
+            });
+        }
+        return picked;
+    },
+    // 恢复：对象回主集合（含级联），签到恢复要扣回课时
+    restoreBinItem(id, kind) {
+        const picked = this._collectBinCascade(id, kind, false);
+        if (!picked.length) { this.showToast('回收站里找不到这条记录'); return; }
+        const now = Date.now();
+
+        picked.forEach(b => {
+            const item = JSON.parse(JSON.stringify(b.item));
+            item._ts = now;  // 用新时间戳，避免被其他设备上的旧版本覆盖
+            if (b.kind === 'course') this.state.courses.push(item);
+            else if (b.kind === 'txn') this.state.transactions.push(item);
+            else if (b.kind === 'child') this.state.children.push(item);
+        });
+        // 恢复签到：删除时退还过课时，这里扣回
+        let missingCourse = false;
+        picked.filter(b => b.kind === 'txn').forEach(b => {
+            const course = this.state.courses.find(c => c.id === b.item.courseId);
+            if (!course) { missingCourse = true; return; }
+            if (b.item.type === 'attend') {
+                course.remaining = Math.max(0, course.remaining - (b.item.amount || 0));
+                course._ts = now;
+            }
+        });
+        // 标记为已恢复（条目保留 30 天，让恢复动作也能跨设备传播）
+        picked.forEach(b => { b.restoredAt = now; b._ts = now; });
+
+        this.save();
+        this.render();
+        this.showRecycleBin();
+        this.showToast(missingCourse ? '已恢复，但所属课程还在回收站，请一并恢复' : '已恢复 ' + picked.length + ' 项');
+    },
+    // 彻底删除：移出回收站 + 记墓碑（跨设备不可恢复）
+    purgeBinItem(id, kind) {
+        const picked = this._collectBinCascade(id, kind, true);
+        if (!picked.length) return;
+        picked.forEach(b => this._tombstone(b.kind, b.id));
+        const kill = new Set(picked.map(b => b.kind + ':' + b.id));
+        this.state.recycleBin = (this.state.recycleBin || []).filter(b => !kill.has(b.kind + ':' + b.id));
+        this.save();
+        this.render();
+        this.showRecycleBin();
+        this.showToast('已彻底删除');
+    },
+    // 清空回收站
+    emptyRecycleBin() {
+        const bins = this._binItems();
+        if (!bins.length) { this.showToast('回收站已经是空的'); return; }
+        this.confirmAction({
+            title: '清空回收站',
+            message: `确定彻底删除回收站里的 <strong>${bins.length}</strong> 项吗？<br><br><span style="color: var(--danger); font-size: 13px;">彻底删除后无法恢复。</span>`,
+            confirmText: '清空',
+            danger: true,
+            onConfirm: () => {
+                bins.forEach(b => this._tombstone(b.kind, b.id));
+                this.state.recycleBin = (this.state.recycleBin || []).filter(b => b.restoredAt);
+                this.save();
+                this.render();
+                this.showRecycleBin();
+                this.showToast('回收站已清空');
+            }
+        });
+    },
+
+    // 回收站弹窗：列出可恢复的条目
+    showRecycleBin() {
+        const bins = this._binItems().sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+        const meta = {
+            course: { icon: '📖', label: '课程' },
+            child: { icon: '👦', label: '孩子' },
+            txn: { icon: '✅', label: '签到' }
+        };
+        let listHtml;
+        if (!bins.length) {
+            listHtml = `
+                <div class="recycle-empty">
+                    <div class="recycle-empty-icon">🗑️</div>
+                    <div class="recycle-empty-title">回收站是空的</div>
+                    <div class="recycle-empty-sub">删除的课程、孩子、签到会先放到这里，可随时恢复</div>
+                </div>`;
+        } else {
+            listHtml = bins.map(b => {
+                const m = meta[b.kind] || { icon: '❔', label: '记录' };
+                let title = '';
+                if (b.kind === 'course') title = b.item.courseName || '未命名课程';
+                else if (b.kind === 'child') title = b.item.childName || '未命名孩子';
+                else title = (b.item.courseName || (b.parent && b.parent.courseName) || '课程') + ' · 签到';
+                // 随它一起删除的下级数量（课程含操作记录 / 孩子含课程）
+                const sub = bins.filter(x => x.follower && (
+                    (b.kind === 'course' && x.kind === 'txn' && x.parent && x.parent.courseId === b.id) ||
+                    (b.kind === 'child' && x.kind === 'course' && x.parent && x.parent.childId === b.id)
+                )).length;
+                const extra = sub ? `<span class="recycle-tag">含 ${sub} 项下级</span>` : '';
+                return `
+                <div class="recycle-item">
+                    <div class="recycle-item-icon">${m.icon}</div>
+                    <div class="recycle-item-body">
+                        <div class="recycle-item-title">${this.escape(title)} ${extra}</div>
+                        <div class="recycle-item-meta">${m.label} · ${this.formatDate(b.deletedAt)} · ${this.escape(b.deletedBy || '未知')} 删除</div>
+                    </div>
+                    <div class="recycle-item-actions">
+                        <button class="recycle-btn restore" onclick="App.restoreBinItem('${b.id}','${b.kind}')">恢复</button>
+                        <button class="recycle-btn purge" onclick="App.purgeBinItem('${b.id}','${b.kind}')">彻底删除</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        const total = bins.length;
+        this.openModal('回收站', `
+            <div class="recycle-head">
+                <span>共 ${total} 项，保留至手动清空</span>
+                ${total ? `<button class="recycle-btn purge block" onclick="App.emptyRecycleBin()">清空回收站</button>` : ''}
+            </div>
+            <div class="recycle-list">${listHtml}</div>
+            <div class="recycle-tip">恢复签到会把课时重新扣回；彻底删除后无法恢复。</div>
+        `);
+    },
+
     // ★ 智能合并云端数据（并集合并，不丢失任何一端的修改）
     _mergeCloudData(cloud, skipRender = false) {
         // 先合并删除墓碑：双方删除过的 id 合并后统一剔除，
@@ -756,6 +957,8 @@ const App = {
             .sort((a, b) => (b.date || 0) - (a.date || 0));
         // 按墓碑剔除已删除对象（并集合并会把另一端已删的旧数据带回来）
         this._applyTombstones();
+        // 再应用回收站：仍被软删除的对象从主集合剔除，已恢复的对象留下来
+        this._mergeRecycleBin(cloud.recycleBin || []);
         // users: 取并集，如果密码不同取 _ts 更大的
         this.state.users = Array.from(userMap.values());
         if (cloud.settings) {
@@ -800,6 +1003,7 @@ const App = {
         this.state.transactions = Array.from(txMap.values())
             .sort((a, b) => (b.date || 0) - (a.date || 0));
         this._applyTombstones();
+        this._mergeRecycleBin(cloud.recycleBin || []);
         if (cloud.settings) {
             const mySyncKey = this.state.settings.syncKey;
             const mySyncEnabled = this.state.settings.syncEnabled;
@@ -1596,14 +1800,17 @@ const App = {
             }
             cleanup();
             this.closeModal();
-            // 记录墓碑：课程本身 + 其名下所有操作记录
-            this._tombstone('course', courseId);
-            this.state.transactions.filter(t => t.courseId === courseId).forEach(t => this._tombstone('txn', t.id));
+            // 课程 + 其名下操作记录一起进回收站（可整体恢复）
+            const course = this.state.courses.find(c => c.id === courseId);
+            if (course) this._binItem('course', course, { childId: course.childId }, false);
+            this.state.transactions.filter(t => t.courseId === courseId).forEach(t => {
+                this._binItem('txn', t, { courseId: courseId, courseName: course ? course.courseName : '' }, true);
+            });
             this.state.courses = this.state.courses.filter(c => c.id !== courseId);
             this.state.transactions = this.state.transactions.filter(t => t.courseId !== courseId);
             this.save();
             this.render();
-            this.showToast('课程已删除');
+            this.showToast('已移入回收站');
         };
         const cancelClick = () => { cleanup(); this.closeModal(); };
         const onKey = (e) => { if (e.key === 'Enter') okClick(); };
@@ -1740,6 +1947,7 @@ const App = {
         const theme = this.state.settings.theme;
         const syncOn = this.isSyncActive();
         const lastSync = this.state.lastSyncTime ? this.formatDate(this.state.lastSyncTime) : '从未';
+        const binCount = this._binItems().length;
 
         let childrenHtml = '';
         this.state.children.forEach((child, idx) => {
@@ -1865,6 +2073,14 @@ const App = {
 
             <div class="settings-section">
                 <div class="settings-section-title">数据管理</div>
+                <div class="settings-item" onclick="App.showRecycleBin()">
+                    <div class="settings-item-icon" style="background: var(--warning-container); color: var(--warning);">🗑️</div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title">回收站</div>
+                        <div class="settings-item-subtitle">${binCount ? binCount + ' 项可恢复' : '空'}</div>
+                    </div>
+                    <div class="settings-item-value">${binCount ? binCount + ' ›' : '›'}</div>
+                </div>
                 <div class="settings-item" onclick="App.exportData()">
                     <div class="settings-item-icon" style="background: var(--success-container); color: var(--success);">📤</div>
                     <div class="settings-item-content">
@@ -2104,14 +2320,17 @@ const App = {
             confirmText: '删除',
             danger: true,
             onConfirm: () => {
-                // 记录墓碑：课程本身 + 其名下所有操作记录（否则另一台设备会"复活"它们）
-                this._tombstone('course', courseId);
-                this.state.transactions.filter(t => t.courseId === courseId).forEach(t => this._tombstone('txn', t.id));
+                const course = this.state.courses.find(c => c.id === courseId);
+                // 课程 + 其名下操作记录一起进回收站（可整体恢复）
+                if (course) this._binItem('course', course, { childId: course.childId }, false);
+                this.state.transactions.filter(t => t.courseId === courseId).forEach(t => {
+                    this._binItem('txn', t, { courseId: courseId, courseName: course ? course.courseName : '' }, true);
+                });
                 this.state.courses = this.state.courses.filter(c => c.id !== courseId);
                 this.state.transactions = this.state.transactions.filter(t => t.courseId !== courseId);
                 this.save();
                 this.render();
-                this.showToast('课程已删除');
+                this.showToast('已移入回收站');
             }
         });
     },
@@ -2391,11 +2610,12 @@ const App = {
                 course.remaining = course.remaining + txn.amount;
                 course._ts = Date.now();
                 this.state.transactions = this.state.transactions.filter(t => t.id !== txnId);
-                this._tombstone('txn', txnId);  // 墓碑随云同步传播，另一台设备合并时剔除
+                // 移入回收站（可恢复），同步时另一端也会同步消失
+                this._binItem('txn', txn, { courseId: txn.courseId, courseName: course.courseName }, false);
                 this.save();
                 this.showCourseDetail(txn.courseId);
                 this.render();
-                this.showToast('已删除，退还 ' + txn.amount + ' 课时');
+                this.showToast('已移入回收站，退还 ' + txn.amount + ' 课时');
             }
         });
     },
@@ -2879,21 +3099,24 @@ const App = {
     deleteChild(childId) {
         const courseCount = this.state.courses.filter(c => c.childId === childId).length;
         const performDelete = () => {
+            const child = this.state.children.find(c => c.id === childId);
             if (courseCount > 0) {
-                // 记录墓碑：孩子 + 名下课程 + 相关操作记录
+                // 孩子 → 其下课程 → 课程的操作记录，逐层进回收站（follower：随父级一起恢复）
                 this.state.courses.filter(c => c.childId === childId).forEach(c => {
-                    this._tombstone('course', c.id);
-                    this.state.transactions.filter(t => t.courseId === c.id).forEach(t => this._tombstone('txn', t.id));
+                    this._binItem('course', c, { childId: childId }, true);
+                    this.state.transactions.filter(t => t.courseId === c.id).forEach(t => {
+                        this._binItem('txn', t, { courseId: c.id, courseName: c.courseName, childId: childId }, true);
+                    });
                 });
                 this.state.courses = this.state.courses.filter(c => c.childId !== childId);
                 const courseIds = new Set(this.state.courses.map(c => c.id));
                 this.state.transactions = this.state.transactions.filter(t => courseIds.has(t.courseId));
             }
-            this._tombstone('child', childId);
+            if (child) this._binItem('child', child, {}, false);
             this.state.children = this.state.children.filter(c => c.id !== childId);
             this.save();
             this.render();
-            this.showToast('已删除');
+            this.showToast('已移入回收站');
         };
 
         if (courseCount > 0) {
@@ -2947,6 +3170,7 @@ const App = {
             courses: this.state.courses,
             transactions: this.state.transactions,
             tombstones: this.state.tombstones || [],
+            recycleBin: this.state.recycleBin || [],
             settings: this.state.settings,
             exportDate: new Date().toISOString()
         };
@@ -2980,8 +3204,9 @@ const App = {
                         this.state.children = data.children;
                         this.state.courses = data.courses;
                         this.state.transactions = data.transactions || [];
-                        // 导入是全量覆盖：清空旧墓碑，避免误删刚导入的数据
+                        // 导入是全量覆盖：清空旧墓碑与回收站，避免误删刚导入的数据
                         this.state.tombstones = [];
+                        this.state.recycleBin = [];
                         if (data.settings) this.state.settings = Object.assign(this.state.settings, data.settings);
                         this.save();
                         this.applyTheme();
