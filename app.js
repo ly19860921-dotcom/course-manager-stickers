@@ -52,7 +52,7 @@ const App = {
     // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
     // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
     //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
-    BUILD_NO: 33,
+    BUILD_NO: 34,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -1436,103 +1436,18 @@ const App = {
 
         emptyState.classList.add('hidden');
 
-        let html = '';
-        // 若仪表盘指定了某个宝宝，只显示该宝宝的分组（去掉 group header）
-        const focusedChildId = this.state.dashboardChildId;
-        const focusedChild = focusedChildId ? this.state.children.find(c => c.id === focusedChildId) : null;
-
-        this.state.children.forEach(child => {
-            if (focusedChildId && child.id !== focusedChildId) return;
-            const childCourses = courses.filter(c => c.childId === child.id);
-            if (childCourses.length === 0) return;
-
-            const childRemaining = childCourses.reduce((s, c) => s + Math.max(0, c.remaining), 0);
-
-            if (focusedChild) {
-                // 单一宝宝视图：省略分组标题
-                html += `<div class="child-section" data-kid="${child.id}">`;
-            } else {
-                html += `
-                    <div class="child-section" data-kid="${child.id}">
-                        <div class="child-flag"></div>
-                        <div class="child-section-header">
-                            <div class="child-avatar">${child.emoji || '👦'}</div>
-                            <h3>${this.escape(child.childName)}</h3>
-                            <span class="child-summary">剩余 ${childRemaining} 课时 · ${childCourses.length} 门课程</span>
-                        </div>
-                `;
-            }
-
-            childCourses.forEach(course => {
-                html += this.renderCourseCard(course);
-            });
-
-            html += '</div>';
-        });
-
-        // Show courses without a child assignment (shouldn't normally happen)
-        const orphanCourses = this.state.courses.filter(c => !this.state.children.find(ch => ch.id === c.childId));
-        if (orphanCourses.length > 0) {
-            html += '<div class="child-section"><div class="child-section-header"><h3>未分配</h3></div>';
-            orphanCourses.forEach(course => {
-                html += this.renderCourseCard(course);
-            });
-            html += '</div>';
+        // 仪表盘同样用横向手风琴（与「全部课程」页共用渲染）
+        const groups = this.buildAccordionGroups(courses);
+        if (groups.length === 0) {
+            const focusedChildId = this.state.dashboardChildId;
+            const focusedChild = focusedChildId ? this.state.children.find(c => c.id === focusedChildId) : null;
+            container.innerHTML = focusedChild
+                ? `<div class="empty-state"><div class="empty-state-icon">${focusedChild.emoji || '📚'}</div><h2>${this.escape(focusedChild.childName)}还没有课程</h2><p>点击下方按钮为ta添加课程</p></div>`
+                : '<div class="empty-state"><div class="empty-state-icon">📚</div><h2>还没有课程</h2><p>点击右下角按钮添加课程</p></div>';
+            return;
         }
-
-        if (html === '') {
-            if (focusedChild) {
-                html = `<div class="empty-state"><div class="empty-state-icon">${focusedChild.emoji || '📚'}</div><h2>${this.escape(focusedChild.childName)}还没有课程</h2><p>点击下方按钮为ta添加课程</p></div>`;
-            } else {
-                html = '<div class="empty-state"><div class="empty-state-icon">📚</div><h2>还没有课程</h2><p>点击右下角按钮添加课程</p></div>';
-            }
-        }
-
-        container.innerHTML = html;
-
-        // 左滑卡片 → 露出删除按钮
-        container.querySelectorAll('.course-swipe-wrap').forEach(wrap => {
-            this._attachCourseSwipe(wrap);
-        });
-
-        // Bind card clicks
-        container.querySelectorAll('.course-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.btn-mini')) return;
-                const wrap = card.closest('.course-swipe-wrap');
-                if (wrap && wrap.classList.contains('swipe-open')) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    this._closeCourseSwipe(wrap);
-                    return;
-                }
-                this.showCourseDetail(card.dataset.courseId);
-            });
-        });
-
-        container.querySelectorAll('.btn-mini.attend').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.showCheckInSheet(btn.dataset.courseId);
-            });
-        });
-
-        container.querySelectorAll('.btn-mini.renew').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.showRenewSheet(btn.dataset.courseId);
-            });
-        });
-
-        container.querySelectorAll('[data-swipe-delete]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const wrap = btn.closest('.course-swipe-wrap');
-                if (wrap) this._closeCourseSwipe(wrap);
-                this.deleteCourseWithPassword(btn.dataset.swipeDelete);
-            });
-        });
+        container.innerHTML = this.renderAccordionSections(groups, 'dash');
+        this._bindAccordion(container);
     },
 
     renderCourseCard(course) {
@@ -1613,7 +1528,12 @@ const App = {
             return;
         }
 
-        // 按孩子分组：大宝 / 二宝 …（未分配的兜底成一组）
+        list.innerHTML = this.renderAccordionSections(this.buildAccordionGroups(courses), 'list');
+        this._bindAccordion(list);
+    },
+
+    // 按孩子把手风琴分组：大宝 / 二宝 …（未分配的兜底成一组）
+    buildAccordionGroups(courses) {
         const groups = [];
         this.state.children.forEach(child => {
             const cs = courses.filter(c => c.childId === child.id);
@@ -1631,31 +1551,32 @@ const App = {
         if (orphans.length) {
             groups.push({ key: '_none', name: '未分配', emoji: '📚', color: '#9A9186', courses: orphans });
         }
+        return groups;
+    },
 
+    // 手风琴 HTML（scope 区分仪表盘 dash / 课程页 list，各自的展开记忆互不干扰）
+    renderAccordionSections(groups, scope) {
         // 记住每条轨道展开的是哪门课（跨渲染保留）
         if (!this.state.accOpen || typeof this.state.accOpen !== 'object') this.state.accOpen = {};
 
-        let html = '';
-        groups.forEach(g => {
+        return groups.map(g => {
             const remain = g.courses.reduce((s, c) => s + Math.max(0, c.remaining), 0);
-            let activeId = this.state.accOpen[g.key];
+            const memKey = scope + ':' + g.key;
+            let activeId = this.state.accOpen[memKey];
             if (!activeId || !g.courses.some(c => c.id === activeId)) activeId = g.courses[0].id;
-            html += `
+            return `
                 <div class="acc-section" data-group="${g.key}">
                     <div class="acc-section-header">
                         <span class="acc-avatar" style="background: ${g.color}22; color: ${g.color};">${g.emoji}</span>
                         <h3>${this.escape(g.name)}</h3>
                         <span class="acc-sub">剩余 ${remain} 课时 · ${g.courses.length} 门</span>
                     </div>
-                    <div class="acc-row" data-group="${g.key}">
+                    <div class="acc-row" data-group="${g.key}" data-scope="${scope}">
                         ${g.courses.map((c, i) => this.renderAccordionPanel(c, i, c.id === activeId, g.color)).join('')}
                     </div>
                 </div>
             `;
-        });
-
-        list.innerHTML = html;
-        this._bindAccordion(list);
+        }).join('');
     },
 
     // 单条手风琴面板：窄条（图标+竖排课名+剩余课时）／详情（延迟淡入）
@@ -1670,7 +1591,7 @@ const App = {
                  style="--acc-bg: ${this._accShade(baseColor, idx)}">
                 <div class="acc-rail">
                     <div class="acc-ico">${icon}</div>
-                    <div class="acc-label-wrap"><div class="acc-label">${this.escape(course.courseName)}</div></div>
+                    <div class="acc-label-wrap"><div class="acc-label${course.courseName.length > 9 ? ' sm' : ''}">${this.escape(course.courseName)}</div></div>
                     <div class="acc-num">${course.remaining}</div>
                 </div>
                 <div class="acc-detail">
@@ -1712,7 +1633,7 @@ const App = {
 
                 row.querySelectorAll('.acc-panel').forEach(p => p.classList.remove('active'));
                 panel.classList.add('active');
-                this.state.accOpen[row.dataset.group] = panel.dataset.courseId;
+                this.state.accOpen[(row.dataset.scope || 'list') + ':' + row.dataset.group] = panel.dataset.courseId;
 
                 // 展开动画结束后，把展开条滚进可视范围（不动页面纵向滚动）
                 setTimeout(() => {
