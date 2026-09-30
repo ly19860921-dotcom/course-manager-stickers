@@ -2035,19 +2035,24 @@ p { line-height: 1.6; }
 .acc-rail .acc-ico { font-size: 15px; line-height: 1; }
 .acc-rail .acc-label-wrap {
     flex: 1;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;   /* 从上往下排 */
     overflow: hidden;
     margin: 8px 0;
 }
+/* 逐字竖排：不依赖 writing-mode（部分安卓浏览器竖排表现不一致），
+   用 1em 宽 + 逐字换行，保证每个字独立一行、严格从上往下 */
 .acc-rail .acc-label {
-    writing-mode: vertical-rl;
-    max-height: 116px;
+    width: 1.1em;
+    word-break: break-all;
+    text-align: center;
     overflow: hidden;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
-    letter-spacing: .06em;
-    line-height: 1.25;
+    line-height: 1.35;
+    letter-spacing: 0;
 }
+.acc-rail .acc-label.sm { font-size: 11.5px; line-height: 1.3; }
 .acc-rail .acc-num {
     font-family: var(--font-num);
     font-size: 13px; font-weight: 800;
@@ -2137,3 +2142,6 @@ p { line-height: 1.6; }
 }
 .acc-detail .acc-btn.renew { background: #fff; color: var(--color-text); }
 .acc-detail .acc-btn:active { transform: scale(.97); }
+
+/* 仪表盘的手风琴稍矮一档，控制整页高度 */
+#coursesByChild .acc-row { height: 200px; }
