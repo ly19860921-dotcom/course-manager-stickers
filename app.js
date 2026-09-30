@@ -39,6 +39,8 @@ const App = {
         lastSyncedVersion: 0, // ★ 上次推送成功时的版本号
         currentView: 'dashboard',
         currentFilter: 'all',
+        // 全部课程页·手风琴：每条轨道（按孩子分组）当前展开的课程 id
+        accOpen: {},
         selectedCourseId: null,
         calCourseId: null,
         calYear: new Date().getFullYear(),
@@ -50,7 +52,7 @@ const App = {
     // 每次发布两者都递增（见 sw.js 顶部注释），用户升级后能看到版本变化。
     // 注意：不要从 CACHE_NAME 读取版本号 —— 虽然目前两者同步递增，
     //       但语义不同（缓存键只管强制刷新，APP_BUILD 才是对外版本）。
-    BUILD_NO: 32,
+    BUILD_NO: 33,
 
     // 启动时读取 sw.js 中的真实版本号（离线或读取失败时回退到上面的常量）
     detectBuildNo() {
@@ -1588,20 +1590,21 @@ const App = {
         return { key: 'good', color: 'success', label: '余量充足' };
     },
 
-    // ---- Course List View ----
+    // ---- Course List View · 横向手风琴（按孩子分组） ----
     renderCourseList() {
         this.renderFilterChips();
         const list = document.getElementById('courseList');
+        const filter = this.state.currentFilter;
         let courses = [...this.state.courses];
 
         // Apply filter
-        if (this.state.currentFilter !== 'all') {
-            if (this.state.currentFilter === 'low') {
+        if (filter !== 'all') {
+            if (filter === 'low') {
                 courses = courses.filter(c => c.remaining > 0 && c.remaining <= this.state.settings.lowThreshold);
-            } else if (this.state.currentFilter === 'finished') {
+            } else if (filter === 'finished') {
                 courses = courses.filter(c => c.remaining <= 0);
             } else {
-                courses = courses.filter(c => c.childId === this.state.currentFilter);
+                courses = courses.filter(c => c.childId === filter);
             }
         }
 
@@ -1610,49 +1613,128 @@ const App = {
             return;
         }
 
-        list.innerHTML = courses.map(c => this.renderCourseCard(c)).join('');
+        // 按孩子分组：大宝 / 二宝 …（未分配的兜底成一组）
+        const groups = [];
+        this.state.children.forEach(child => {
+            const cs = courses.filter(c => c.childId === child.id);
+            if (cs.length) {
+                groups.push({
+                    key: child.id,
+                    name: child.childName,
+                    emoji: child.emoji || '👦',
+                    color: child.color || this.childColors[0],
+                    courses: cs
+                });
+            }
+        });
+        const orphans = courses.filter(c => !this.state.children.find(ch => ch.id === c.childId));
+        if (orphans.length) {
+            groups.push({ key: '_none', name: '未分配', emoji: '📚', color: '#9A9186', courses: orphans });
+        }
 
-        // 左滑卡片 → 露出删除按钮
-        list.querySelectorAll('.course-swipe-wrap').forEach(wrap => {
-            this._attachCourseSwipe(wrap);
+        // 记住每条轨道展开的是哪门课（跨渲染保留）
+        if (!this.state.accOpen || typeof this.state.accOpen !== 'object') this.state.accOpen = {};
+
+        let html = '';
+        groups.forEach(g => {
+            const remain = g.courses.reduce((s, c) => s + Math.max(0, c.remaining), 0);
+            let activeId = this.state.accOpen[g.key];
+            if (!activeId || !g.courses.some(c => c.id === activeId)) activeId = g.courses[0].id;
+            html += `
+                <div class="acc-section" data-group="${g.key}">
+                    <div class="acc-section-header">
+                        <span class="acc-avatar" style="background: ${g.color}22; color: ${g.color};">${g.emoji}</span>
+                        <h3>${this.escape(g.name)}</h3>
+                        <span class="acc-sub">剩余 ${remain} 课时 · ${g.courses.length} 门</span>
+                    </div>
+                    <div class="acc-row" data-group="${g.key}">
+                        ${g.courses.map((c, i) => this.renderAccordionPanel(c, i, c.id === activeId, g.color)).join('')}
+                    </div>
+                </div>
+            `;
         });
 
-        list.querySelectorAll('.course-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.btn-mini')) return;
-                const wrap = card.closest('.course-swipe-wrap');
-                if (wrap && wrap.classList.contains('swipe-open')) {
-                    // 已打开则点击关闭，不再进入详情
-                    e.stopPropagation();
-                    e.preventDefault();
-                    this._closeCourseSwipe(wrap);
+        list.innerHTML = html;
+        this._bindAccordion(list);
+    },
+
+    // 单条手风琴面板：窄条（图标+竖排课名+剩余课时）／详情（延迟淡入）
+    renderAccordionPanel(course, idx, isActive, baseColor) {
+        const status = this.getStatus(course.remaining);
+        const percent = course.total > 0 ? Math.min(100, (course.remaining / course.total) * 100) : 0;
+        const icon = course.remaining <= 0 ? '✅'
+            : (status.key === 'low' ? '⚠️'
+                : (status.key === 'moderate' ? '📗' : '📚'));
+        return `
+            <div class="acc-panel${isActive ? ' active' : ''}" data-course-id="${course.id}" data-idx="${idx}"
+                 style="--acc-bg: ${this._accShade(baseColor, idx)}">
+                <div class="acc-rail">
+                    <div class="acc-ico">${icon}</div>
+                    <div class="acc-label-wrap"><div class="acc-label">${this.escape(course.courseName)}</div></div>
+                    <div class="acc-num">${course.remaining}</div>
+                </div>
+                <div class="acc-detail">
+                    <div class="acc-d-head">
+                        <div class="acc-d-title">${this.escape(course.courseName)}</div>
+                        <div class="acc-d-badge${status.key === 'low' ? ' alert' : ''}">${status.label}</div>
+                    </div>
+                    <div class="acc-d-inst">${this.escape(course.institutionName)}</div>
+                    <div class="acc-d-big">${course.remaining}<span>/ ${course.total} 课时</span></div>
+                    <div class="acc-d-track"><i style="width: ${percent}%"></i></div>
+                    <div class="acc-d-actions">
+                        <button class="acc-btn attend" data-course-id="${course.id}" type="button">签到</button>
+                        <button class="acc-btn renew" data-course-id="${course.id}" type="button">续费</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // 同一孩子下用同色系深浅区分（只往深走，保证白字可读）
+    _accShade(base, idx) {
+        const seq = [0, -0.15, -0.06, -0.26, -0.20, -0.10];
+        const v = seq[idx % seq.length];
+        return v < 0 ? this._darken(base, -v) : base;
+    },
+
+    // 手风琴交互：点击展开（其余收窄），再点已展开的进详情
+    _bindAccordion(list) {
+        list.querySelectorAll('.acc-panel').forEach(panel => {
+            panel.addEventListener('click', (e) => {
+                if (e.target.closest('.acc-btn')) return;   // 按钮各自处理
+                const row = panel.closest('.acc-row');
+                if (!row) return;
+
+                if (panel.classList.contains('active')) {
+                    this.showCourseDetail(panel.dataset.courseId);
                     return;
                 }
-                this.showCourseDetail(card.dataset.courseId);
+
+                row.querySelectorAll('.acc-panel').forEach(p => p.classList.remove('active'));
+                panel.classList.add('active');
+                this.state.accOpen[row.dataset.group] = panel.dataset.courseId;
+
+                // 展开动画结束后，把展开条滚进可视范围（不动页面纵向滚动）
+                setTimeout(() => {
+                    const rr = row.getBoundingClientRect();
+                    const pr = panel.getBoundingClientRect();
+                    if (pr.right > rr.right) row.scrollLeft += (pr.right - rr.right) + 8;
+                    else if (pr.left < rr.left) row.scrollLeft -= (rr.left - pr.left) + 8;
+                }, 580);
             });
         });
 
-        list.querySelectorAll('.btn-mini.attend').forEach(btn => {
+        list.querySelectorAll('.acc-btn.attend').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.showCheckInSheet(btn.dataset.courseId);
             });
         });
 
-        list.querySelectorAll('.btn-mini.renew').forEach(btn => {
+        list.querySelectorAll('.acc-btn.renew').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.showRenewSheet(btn.dataset.courseId);
-            });
-        });
-
-        list.querySelectorAll('[data-swipe-delete]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const wrap = btn.closest('.course-swipe-wrap');
-                if (wrap) this._closeCourseSwipe(wrap);
-                this.deleteCourseWithPassword(btn.dataset.swipeDelete);
             });
         });
     },
