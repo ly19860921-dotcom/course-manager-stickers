@@ -1960,3 +1960,180 @@ p { line-height: 1.6; }
 .recycle-empty-title { font-size: 14px; font-weight: 600; color: var(--color-text); }
 .recycle-empty-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 6px; line-height: 1.6; }
 .recycle-tip { font-size: 12px; color: var(--color-text-muted); margin-top: 14px; line-height: 1.6; }
+
+/* ============================================
+   横向手风琴 · 全部课程（Accordion Row）
+   默认等宽窄条 → 点击某条展开变宽，其余同步收窄，内容延迟淡入
+   同一孩子用同色系深浅，实现「大宝/二宝」一眼区分
+   ============================================ */
+.acc-section { margin-bottom: 20px; }
+
+.acc-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 4px 8px;
+}
+.acc-section-header .acc-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+}
+.acc-section-header h3 {
+    font-family: var(--font-display);
+    font-size: 14.5px; font-weight: 800; color: var(--color-text);
+}
+.acc-section-header .acc-sub {
+    margin-left: auto;
+    font-size: 11.5px; font-weight: 600; color: var(--color-text-muted);
+}
+
+/* 手风琴轨道 */
+.acc-row {
+    display: flex;
+    gap: 6px;
+    height: 232px;
+    padding: 7px;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-soft);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.acc-row::-webkit-scrollbar { display: none; }
+
+/* 单条面板 */
+.acc-panel {
+    position: relative;
+    flex: 1 1 52px;
+    min-width: 52px;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    color: #fff;
+    background: var(--acc-bg, var(--kid-primary));
+    transition: flex-grow var(--dur-slow) var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+}
+.acc-panel.active { flex-grow: 5; cursor: default; }
+
+/* 窄条状态 */
+.acc-rail {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0;
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+.acc-panel.active .acc-rail {
+    opacity: 0;
+    transform: scale(.9);
+    pointer-events: none;
+}
+.acc-rail .acc-ico { font-size: 15px; line-height: 1; }
+.acc-rail .acc-label-wrap {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    margin: 8px 0;
+}
+.acc-rail .acc-label {
+    writing-mode: vertical-rl;
+    max-height: 116px;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    line-height: 1.25;
+}
+.acc-rail .acc-num {
+    font-family: var(--font-num);
+    font-size: 13px; font-weight: 800;
+}
+
+/* 展开详情（延迟淡入） */
+.acc-detail {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    padding: 14px 14px 12px;
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+}
+.acc-panel.active .acc-detail {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    transition-delay: 280ms;      /* 等内容区展开动画走完再淡入 */
+}
+
+.acc-detail .acc-d-head {
+    display: flex; align-items: center; gap: 6px;
+}
+.acc-detail .acc-d-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px; font-weight: 800;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acc-detail .acc-d-badge {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(255,255,255,.28);
+}
+.acc-detail .acc-d-badge.alert { background: #fff; color: var(--color-danger); }
+
+.acc-detail .acc-d-inst {
+    margin-top: 3px;
+    font-size: 11.5px;
+    opacity: .84;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.acc-detail .acc-d-big {
+    margin-top: 12px;
+    font-family: var(--font-num);
+    font-size: 34px; font-weight: 800; line-height: 1;
+}
+.acc-detail .acc-d-big span {
+    margin-left: 4px;
+    font-size: 12px; font-weight: 600; opacity: .85;
+}
+
+.acc-detail .acc-d-track {
+    height: 6px;
+    margin-top: 10px;
+    border-radius: var(--radius-full);
+    background: rgba(255,255,255,.3);
+    overflow: hidden;
+}
+.acc-detail .acc-d-track i {
+    display: block; height: 100%;
+    border-radius: var(--radius-full);
+    background: #fff;
+    transition: width 420ms 320ms var(--ease-out);
+}
+
+.acc-detail .acc-d-actions {
+    display: flex; gap: 8px;
+    margin-top: auto;
+}
+.acc-detail .acc-btn {
+    flex: 1;
+    height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255,255,255,.24);
+    color: #fff;
+    font-family: inherit;
+    font-size: 12.5px; font-weight: 700;
+    cursor: pointer;
+}
+.acc-detail .acc-btn.renew { background: #fff; color: var(--color-text); }
+.acc-detail .acc-btn:active { transform: scale(.97); }
